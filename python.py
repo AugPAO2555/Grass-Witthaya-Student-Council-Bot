@@ -6,7 +6,7 @@ import os
 # ========================
 # ตั้งค่า TOKEN จาก Railway Environment
 # ========================
-TOKEN = os.getenv("TOKEN")
+TOKEN = os.getenv("DISCORD_TOKEN")
 
 # ========================
 # Intents
