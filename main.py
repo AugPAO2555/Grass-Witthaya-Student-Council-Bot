@@ -2,8 +2,9 @@ import discord
 from discord.ext import commands
 import json
 import os
-from datetime import datetime
 from dotenv import load_dotenv
+from datetime import datetime
+import pytz
 
 # ========================
 # LOAD TOKEN
@@ -12,13 +13,24 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 # ========================
+# TIMEZONE (THAILAND)
+# ========================
+thai_tz = pytz.timezone("Asia/Bangkok")
+
+def time_now():
+    return datetime.now(thai_tz).strftime("%d/%m/%Y %H:%M")
+
+# ========================
 # INTENTS
 # ========================
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
 
 # ========================
 # CONFIG
@@ -27,20 +39,24 @@ DATA_FILE = "points.json"
 
 LOG_CHANNEL_ID = 1475448056160849971
 
+COUNCIL_ROLE_ID = 1369286013230252089
+
+ALLOWED_ROLE_ID = 1430508523321688145
+
 APPROVED = "<:approved:1370751335695126678>"
 WAITING = "<:Waiting_for_approved:1370752766183735306>"
 DENIED = "<:denied:1370751020845764671>"
 
 LINE = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
 
-ALLOWED_ROLE_ID = 1430508523321688145
-
 # ========================
 # LOAD DATA
 # ========================
 def load_data():
+
     if not os.path.exists(DATA_FILE):
         return {}
+
     with open(DATA_FILE, "r") as f:
         return json.load(f)
 
@@ -48,49 +64,28 @@ def load_data():
 # SAVE DATA
 # ========================
 def save_data(data):
+
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
-
-# ========================
-# TIME NOW
-# ========================
-def time_now():
-    return datetime.now().strftime("%d/%m/%Y %H:%M")
 
 # ========================
 # FOOTER
 # ========================
 def footer(embed):
+
     embed.set_footer(
-        text=f"Reborn Grass Witthaya Student Council | {time_now()}"
+        text=f"Reborn Grass Witthaya Student Council | สภานักเรียนกราซวิทยา | {time_now()}"
     )
 
 # ========================
 # CHECK PERMISSION
 # ========================
 def has_permission(member):
+
     return any(role.id == ALLOWED_ROLE_ID for role in member.roles)
 
 # ========================
-# RANK SYSTEM
-# ========================
-def get_rank(points):
-
-    if points >= 800:
-        return "ประธาน"
-    elif points >= 500:
-        return "รองประธาน"
-    elif points >= 300:
-        return "หัวหน้าฝ่าย"
-    elif points >= 150:
-        return "รองหัวหน้าฝ่าย"
-    elif points >= 50:
-        return "Member"
-    else:
-        return "Trainee"
-
-# ========================
-# LOG FUNCTION
+# SEND LOG
 # ========================
 async def send_log(embed):
 
@@ -100,7 +95,7 @@ async def send_log(embed):
         await channel.send(embed=embed)
 
 # ========================
-# BOT READY
+# READY
 # ========================
 @bot.event
 async def on_ready():
@@ -108,7 +103,7 @@ async def on_ready():
     print(f"Bot Online: {bot.user}")
 
 # ========================
-# POINTS COMMAND
+# POINTS
 # ========================
 @bot.command()
 async def points(ctx, member: discord.Member = None):
@@ -120,14 +115,11 @@ async def points(ctx, member: discord.Member = None):
 
     points = data.get(str(member.id), 0)
 
-    rank = get_rank(points)
-
     embed = discord.Embed(
 
         description=(
             f"{LINE}\n\n"
-            f"{APPROVED} | {member.mention}\n\n"
-            f"🏅 Rank : {rank}\n"
+            f"{APPROVED} | {member.mention}\n"
             f"📊 Points : {points} Work Points\n\n"
             f"{LINE}"
         ),
@@ -149,7 +141,7 @@ async def points(ctx, member: discord.Member = None):
     await ctx.send(embed=embed)
 
 # ========================
-# ADD COMMAND
+# ADD
 # ========================
 @bot.command()
 async def add(ctx, member: discord.Member, amount: int):
@@ -171,31 +163,28 @@ async def add(ctx, member: discord.Member, amount: int):
 
     user_id = str(member.id)
 
-    before = data.get(user_id, 0)
+    new = data.get(user_id, 0) + amount
 
-    after = before + amount
-
-    data[user_id] = after
+    data[user_id] = new
 
     save_data(data)
 
     embed = discord.Embed(
 
         description=(
-            f"{APPROVED} | เพิ่ม {amount} Work Points ให้กับ {member.mention} สำเร็จ!"
+            f"{LINE}\n\n"
+            f"{APPROVED} | เพิ่ม {amount} Work Points ให้กับ {member.mention}\n"
+            f"📊 Points Now : {new}\n\n"
+            f"{LINE}"
         ),
 
         color=0x2ecc71
 
     )
 
-    embed.set_author(
-        name="Work Points | แต้มการทำงาน"
-    )
+    embed.set_author(name="Work Points | แต้มการทำงาน")
 
-    embed.set_thumbnail(
-        url=member.display_avatar.url
-    )
+    embed.set_thumbnail(url=member.display_avatar.url)
 
     footer(embed)
 
@@ -203,14 +192,13 @@ async def add(ctx, member: discord.Member, amount: int):
 
     log = discord.Embed(
 
-        title="Point Added",
-
         description=(
-            f"{APPROVED} Point Transaction\n\n"
-            f"Admin : {ctx.author.mention}\n"
-            f"Target : {member.mention}\n\n"
-            f"Before : {before}\n"
-            f"After : {after}"
+            f"{LINE}\n\n"
+            f"{APPROVED} Point Added\n\n"
+            f"👤 Admin : {ctx.author.mention}\n"
+            f"🎯 Target : {member.mention}\n"
+            f"📊 Points Now : {new}\n\n"
+            f"{LINE}"
         ),
 
         color=0x2ecc71
@@ -222,7 +210,7 @@ async def add(ctx, member: discord.Member, amount: int):
     await send_log(log)
 
 # ========================
-# REMOVE COMMAND
+# REMOVE
 # ========================
 @bot.command()
 async def remove(ctx, member: discord.Member, amount: int):
@@ -244,34 +232,31 @@ async def remove(ctx, member: discord.Member, amount: int):
 
     user_id = str(member.id)
 
-    before = data.get(user_id, 0)
+    new = data.get(user_id, 0) - amount
 
-    after = before - amount
+    if new < 0:
+        new = 0
 
-    if after < 0:
-        after = 0
-
-    data[user_id] = after
+    data[user_id] = new
 
     save_data(data)
 
     embed = discord.Embed(
 
         description=(
-            f"{APPROVED} | ลบ {amount} Work Points จาก {member.mention} สำเร็จ!"
+            f"{LINE}\n\n"
+            f"{APPROVED} | ลบ {amount} Work Points จาก {member.mention}\n"
+            f"📊 Points Now : {new}\n\n"
+            f"{LINE}"
         ),
 
         color=0xe74c3c
 
     )
 
-    embed.set_author(
-        name="Work Points | แต้มการทำงาน"
-    )
+    embed.set_author(name="Work Points | แต้มการทำงาน")
 
-    embed.set_thumbnail(
-        url=member.display_avatar.url
-    )
+    embed.set_thumbnail(url=member.display_avatar.url)
 
     footer(embed)
 
@@ -279,14 +264,13 @@ async def remove(ctx, member: discord.Member, amount: int):
 
     log = discord.Embed(
 
-        title="Point Removed",
-
         description=(
-            f"{DENIED} Point Transaction\n\n"
-            f"Admin : {ctx.author.mention}\n"
-            f"Target : {member.mention}\n\n"
-            f"Before : {before}\n"
-            f"After : {after}"
+            f"{LINE}\n\n"
+            f"{DENIED} Point Removed\n\n"
+            f"👤 Admin : {ctx.author.mention}\n"
+            f"🎯 Target : {member.mention}\n"
+            f"📊 Points Now : {new}\n\n"
+            f"{LINE}"
         ),
 
         color=0xe74c3c
@@ -298,7 +282,7 @@ async def remove(ctx, member: discord.Member, amount: int):
     await send_log(log)
 
 # ========================
-# DUTY COMMAND (MINUTES)
+# DUTY (minutes → points)
 # ========================
 @bot.command()
 async def duty(ctx, member: discord.Member, minutes: int):
@@ -322,58 +306,80 @@ async def duty(ctx, member: discord.Member, minutes: int):
 
     user_id = str(member.id)
 
-    before = data.get(user_id, 0)
+    new = data.get(user_id, 0) + points
 
-    after = before + points
-
-    data[user_id] = after
+    data[user_id] = new
 
     save_data(data)
 
     embed = discord.Embed(
 
         description=(
-            f"{APPROVED} | เพิ่ม {points} Work Points ให้กับ {member.mention}\n\n"
-            f"⏱️ Minutes : {minutes}"
+            f"{LINE}\n\n"
+            f"{APPROVED} | Duty Completed\n"
+            f"🎯 Target : {member.mention}\n"
+            f"⏱️ Minutes : {minutes}\n"
+            f"📊 Points Earned : {points}\n"
+            f"📊 Points Now : {new}\n\n"
+            f"{LINE}"
         ),
 
         color=0x3498db
 
     )
 
-    embed.set_author(
-        name="Work Points | แต้มการทำงาน"
-    )
+    embed.set_author(name="Work Points | แต้มการทำงาน")
 
-    embed.set_thumbnail(
-        url=member.display_avatar.url
-    )
+    embed.set_thumbnail(url=member.display_avatar.url)
 
     footer(embed)
 
     await ctx.send(embed=embed)
 
-    log = discord.Embed(
+    await send_log(embed)
 
-        title="Duty Points Added",
+# ========================
+# LEADERBOARD
+# ========================
+@bot.command()
+async def leaderboard(ctx):
+
+    data = load_data()
+
+    role = ctx.guild.get_role(COUNCIL_ROLE_ID)
+
+    members = []
+
+    for member in role.members:
+
+        points = data.get(str(member.id), 0)
+
+        members.append((member, points))
+
+    members.sort(key=lambda x: x[1], reverse=True)
+
+    text = ""
+
+    for i, (member, points) in enumerate(members[:10], 1):
+
+        text += f"{i}. {member.mention} — {points} Points\n"
+
+    embed = discord.Embed(
 
         description=(
-            f"{APPROVED} Duty Transaction\n\n"
-            f"Admin : {ctx.author.mention}\n"
-            f"Target : {member.mention}\n\n"
-            f"Minutes : {minutes}\n"
-            f"Points : {points}\n\n"
-            f"Before : {before}\n"
-            f"After : {after}"
+            f"{LINE}\n\n"
+            f"🏆 Work Points Leaderboard\n\n"
+            f"{text if text else 'ไม่มีข้อมูล'}\n"
+            f"{LINE}"
         ),
 
-        color=0x3498db
+        color=0xf1c40f
 
     )
 
-    footer(log)
+    footer(embed)
 
-    await send_log(log)
+    await ctx.send(embed=embed)
 
 # ========================
 # RUN
