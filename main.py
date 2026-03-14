@@ -1,31 +1,20 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import json
 import os
-from dotenv import load_dotenv
 from datetime import datetime
-import pytz
 
-# ========================
-# LOAD TOKEN
-# ========================
-load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# ========================
-# TIMEZONE (THAILAND)
-# ========================
-thai_tz = pytz.timezone("Asia/Bangkok")
+POINTS_FILE = "points.json"
+LOG_CHANNEL_ID = 1475448056160849971
 
-def time_now():
-    return datetime.now(thai_tz).strftime("%d/%m/%Y %H:%M")
+APPROVED = "<:approved:1370751335695126678>"
+WAITING = "<:Waiting_for_approved:1370752766183735306>"
+DENIED = "<:denied:1370751020845764671>"
 
-# ========================
-# INTENTS
-# ========================
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
+intents = discord.Intents.all()
 
 bot = commands.Bot(
     command_prefix="!",
@@ -33,355 +22,213 @@ bot = commands.Bot(
 )
 
 # ========================
-# CONFIG
+# โหลดข้อมูลแต้ม
 # ========================
-DATA_FILE = "points.json"
 
-LOG_CHANNEL_ID = 1475448056160849971
-
-COUNCIL_ROLE_ID = 1369286013230252089
-
-ALLOWED_ROLE_ID = 1430508523321688145
-
-APPROVED = "<:approved:1370751335695126678>"
-WAITING = "<:Waiting_for_approved:1370752766183735306>"
-DENIED = "<:denied:1370751020845764671>"
-
-LINE = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
-
-# ========================
-# LOAD DATA
-# ========================
-def load_data():
-
-    if not os.path.exists(DATA_FILE):
+def load_points():
+    if not os.path.exists(POINTS_FILE):
         return {}
-
-    with open(DATA_FILE, "r") as f:
+    with open(POINTS_FILE, "r") as f:
         return json.load(f)
 
-# ========================
-# SAVE DATA
-# ========================
-def save_data(data):
+def save_points(data):
+    with open(POINTS_FILE, "w") as f:
+        json.dump(data, f)
 
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+points = load_points()
 
 # ========================
-# FOOTER
+# permission
 # ========================
-def footer(embed):
 
-    embed.set_footer(
-        text=f"Reborn Grass Witthaya Student Council | สภานักเรียนกราซวิทยา | {time_now()}"
-    )
+def is_admin(member: discord.Member):
+    if member.guild_permissions.administrator:
+        return True
 
-# ========================
-# CHECK PERMISSION
-# ========================
-def has_permission(member):
-
-    return any(role.id == ALLOWED_ROLE_ID for role in member.roles)
+    allowed_roles = ["Admin", "Mod"]
+    return any(role.name in allowed_roles for role in member.roles)
 
 # ========================
-# SEND LOG
+# เวลา
 # ========================
-async def send_log(embed):
 
-    channel = bot.get_channel(LOG_CHANNEL_ID)
-
-    if channel:
-        await channel.send(embed=embed)
+def now_time():
+    return datetime.now().strftime("%d/%m/%Y %H:%M")
 
 # ========================
-# READY
+# Bot Ready
 # ========================
+
 @bot.event
 async def on_ready():
+    print(f"Bot online: {bot.user}")
 
-    print(f"Bot Online: {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} commands")
+    except Exception as e:
+        print(e)
 
 # ========================
-# POINTS
+# /points ดูแต้ม
 # ========================
-@bot.command()
-async def points(ctx, member: discord.Member = None):
 
-    if member is None:
-        member = ctx.author
+@bot.tree.command(name="points", description="ดูแต้มของสมาชิก")
+@app_commands.describe(member="สมาชิกที่ต้องการดู")
+async def points_cmd(interaction: discord.Interaction, member: discord.Member):
 
-    data = load_data()
+    user_id = str(member.id)
 
-    points = data.get(str(member.id), 0)
+    if user_id not in points:
+        points[user_id] = 0
 
     embed = discord.Embed(
-
-        description=(
-            f"{LINE}\n\n"
-            f"{APPROVED} | {member.mention}\n"
-            f"📊 Points : {points} Work Points\n\n"
-            f"{LINE}"
-        ),
-
-        color=0x2ecc71
-
+        description=f"{APPROVED} | {member.mention} มี **{points[user_id]} แต้ม**",
+        color=0x2f3136
     )
 
     embed.set_author(
         name="Work Points | แต้มการทำงาน"
     )
 
-    embed.set_thumbnail(
-        url=member.display_avatar.url
+    embed.set_thumbnail(url=member.display_avatar.url)
+
+    embed.set_footer(
+        text=f"Reborn | Grass Witthaya Student Council | {now_time()}"
     )
 
-    footer(embed)
-
-    await ctx.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 # ========================
-# ADD
+# /add เพิ่มแต้ม
 # ========================
-@bot.command()
-async def add(ctx, member: discord.Member, amount: int):
 
-    if not has_permission(ctx.author):
+@bot.tree.command(name="add", description="เพิ่มแต้มให้สมาชิก")
+@app_commands.describe(member="สมาชิก", amount="จำนวนแต้ม")
+async def add_points(interaction: discord.Interaction, member: discord.Member, amount: int):
 
-        embed = discord.Embed(
-            description=f"{DENIED} | You dont have permission to run this command!",
-            color=0xe74c3c
+    if not is_admin(interaction.user):
+        await interaction.response.send_message(
+            f"{DENIED} | You don't have permission to run this command!",
+            ephemeral=True
         )
-
-        footer(embed)
-
-        await ctx.send(embed=embed)
-
         return
-
-    data = load_data()
 
     user_id = str(member.id)
 
-    new = data.get(user_id, 0) + amount
+    if user_id not in points:
+        points[user_id] = 0
 
-    data[user_id] = new
-
-    save_data(data)
+    points[user_id] += amount
+    save_points(points)
 
     embed = discord.Embed(
-
-        description=(
-            f"{LINE}\n\n"
-            f"{APPROVED} | เพิ่ม {amount} Work Points ให้กับ {member.mention}\n"
-            f"📊 Points Now : {new}\n\n"
-            f"{LINE}"
-        ),
-
+        description=f"{APPROVED} | เพิ่ม **{amount} แต้ม** ให้ {member.mention}",
         color=0x2ecc71
-
     )
 
-    embed.set_author(name="Work Points | แต้มการทำงาน")
+    embed.set_author(
+        name="Work Points | แต้มการทำงาน"
+    )
 
     embed.set_thumbnail(url=member.display_avatar.url)
 
-    footer(embed)
-
-    await ctx.send(embed=embed)
-
-    log = discord.Embed(
-
-        description=(
-            f"{LINE}\n\n"
-            f"{APPROVED} Point Added\n\n"
-            f"👤 Admin : {ctx.author.mention}\n"
-            f"🎯 Target : {member.mention}\n"
-            f"📊 Points Now : {new}\n\n"
-            f"{LINE}"
-        ),
-
-        color=0x2ecc71
-
+    embed.set_footer(
+        text=f"Reborn | Grass Witthaya Student Council | {now_time()}"
     )
 
-    footer(log)
+    await interaction.response.send_message(embed=embed)
 
-    await send_log(log)
+    log = bot.get_channel(LOG_CHANNEL_ID)
 
-# ========================
-# REMOVE
-# ========================
-@bot.command()
-async def remove(ctx, member: discord.Member, amount: int):
+    if log:
+        log_embed = discord.Embed(
+            description=f"""
+{APPROVED} | Point Update
 
-    if not has_permission(ctx.author):
+Admin : {interaction.user.mention}
+Target : {member.mention}
+Points : +{amount}
 
-        embed = discord.Embed(
-            description=f"{DENIED} | You dont have permission to run this command!",
-            color=0xe74c3c
+Current Points : {points[user_id]}
+""",
+            color=0x2ecc71
         )
 
-        footer(embed)
+        log_embed.set_thumbnail(url=member.display_avatar.url)
 
-        await ctx.send(embed=embed)
+        log_embed.set_footer(
+            text=f"Reborn | Grass Witthaya Student Council | {now_time()}"
+        )
 
+        await log.send(embed=log_embed)
+
+# ========================
+# /remove ลดแต้ม
+# ========================
+
+@bot.tree.command(name="remove", description="ลดแต้มสมาชิก")
+@app_commands.describe(member="สมาชิก", amount="จำนวนแต้ม")
+async def remove_points(interaction: discord.Interaction, member: discord.Member, amount: int):
+
+    if not is_admin(interaction.user):
+        await interaction.response.send_message(
+            f"{DENIED} | You don't have permission to run this command!",
+            ephemeral=True
+        )
         return
-
-    data = load_data()
 
     user_id = str(member.id)
 
-    new = data.get(user_id, 0) - amount
+    if user_id not in points:
+        points[user_id] = 0
 
-    if new < 0:
-        new = 0
-
-    data[user_id] = new
-
-    save_data(data)
+    points[user_id] -= amount
+    save_points(points)
 
     embed = discord.Embed(
-
-        description=(
-            f"{LINE}\n\n"
-            f"{APPROVED} | ลบ {amount} Work Points จาก {member.mention}\n"
-            f"📊 Points Now : {new}\n\n"
-            f"{LINE}"
-        ),
-
+        description=f"{APPROVED} | ลด **{amount} แต้ม** จาก {member.mention}",
         color=0xe74c3c
-
     )
 
-    embed.set_author(name="Work Points | แต้มการทำงาน")
+    embed.set_author(
+        name="Work Points | แต้มการทำงาน"
+    )
 
     embed.set_thumbnail(url=member.display_avatar.url)
 
-    footer(embed)
-
-    await ctx.send(embed=embed)
-
-    log = discord.Embed(
-
-        description=(
-            f"{LINE}\n\n"
-            f"{DENIED} Point Removed\n\n"
-            f"👤 Admin : {ctx.author.mention}\n"
-            f"🎯 Target : {member.mention}\n"
-            f"📊 Points Now : {new}\n\n"
-            f"{LINE}"
-        ),
-
-        color=0xe74c3c
-
+    embed.set_footer(
+        text=f"Reborn | Grass Witthaya Student Council | {now_time()}"
     )
 
-    footer(log)
+    await interaction.response.send_message(embed=embed)
 
-    await send_log(log)
+    log = bot.get_channel(LOG_CHANNEL_ID)
 
-# ========================
-# DUTY (minutes → points)
-# ========================
-@bot.command()
-async def duty(ctx, member: discord.Member, minutes: int):
+    if log:
+        log_embed = discord.Embed(
+            description=f"""
+{APPROVED} | Point Update
 
-    if not has_permission(ctx.author):
+Admin : {interaction.user.mention}
+Target : {member.mention}
+Points : -{amount}
 
-        embed = discord.Embed(
-            description=f"{DENIED} | You dont have permission to run this command!",
+Current Points : {points[user_id]}
+""",
             color=0xe74c3c
         )
 
-        footer(embed)
+        log_embed.set_thumbnail(url=member.display_avatar.url)
 
-        await ctx.send(embed=embed)
+        log_embed.set_footer(
+            text=f"Reborn | Grass Witthaya Student Council | {now_time()}"
+        )
 
-        return
-
-    points = minutes // 6
-
-    data = load_data()
-
-    user_id = str(member.id)
-
-    new = data.get(user_id, 0) + points
-
-    data[user_id] = new
-
-    save_data(data)
-
-    embed = discord.Embed(
-
-        description=(
-            f"{LINE}\n\n"
-            f"{APPROVED} | Duty Completed\n"
-            f"🎯 Target : {member.mention}\n"
-            f"⏱️ Minutes : {minutes}\n"
-            f"📊 Points Earned : {points}\n"
-            f"📊 Points Now : {new}\n\n"
-            f"{LINE}"
-        ),
-
-        color=0x3498db
-
-    )
-
-    embed.set_author(name="Work Points | แต้มการทำงาน")
-
-    embed.set_thumbnail(url=member.display_avatar.url)
-
-    footer(embed)
-
-    await ctx.send(embed=embed)
-
-    await send_log(embed)
+        await log.send(embed=log_embed)
 
 # ========================
-# LEADERBOARD
+# Run Bot
 # ========================
-@bot.command()
-async def leaderboard(ctx):
 
-    data = load_data()
-
-    role = ctx.guild.get_role(COUNCIL_ROLE_ID)
-
-    members = []
-
-    for member in role.members:
-
-        points = data.get(str(member.id), 0)
-
-        members.append((member, points))
-
-    members.sort(key=lambda x: x[1], reverse=True)
-
-    text = ""
-
-    for i, (member, points) in enumerate(members[:10], 1):
-
-        text += f"{i}. {member.mention} — {points} Points\n"
-
-    embed = discord.Embed(
-
-        description=(
-            f"{LINE}\n\n"
-            f"🏆 Work Points Leaderboard\n\n"
-            f"{text if text else 'ไม่มีข้อมูล'}\n"
-            f"{LINE}"
-        ),
-
-        color=0xf1c40f
-
-    )
-
-    footer(embed)
-
-    await ctx.send(embed=embed)
-
-# ========================
-# RUN
-# ========================
 bot.run(TOKEN)
