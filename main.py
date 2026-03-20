@@ -4,6 +4,21 @@ from discord import app_commands
 import json
 import os
 from datetime import datetime
+from flask import Flask
+from threading import Thread
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=10000)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -230,5 +245,7 @@ Current Points : {points[user_id]}
 # ========================
 # Run Bot
 # ========================
+
+keep_alive()  # 👈 สำคัญมาก
 
 bot.run(TOKEN)
