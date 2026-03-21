@@ -1,4 +1,3 @@
-# main.py
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -11,14 +10,16 @@ import requests
 from dotenv import load_dotenv
 
 # ========================
-# Load .env
+# Load ENV
 # ========================
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
 
+print("TOKEN:", "SET" if TOKEN else "❌ NOT SET")
+
 # ========================
-# Keep Alive (Flask)
+# Flask (Keep Alive)
 # ========================
 app = Flask('')
 
@@ -26,7 +27,7 @@ app = Flask('')
 def health():
     return {
         "status": "online",
-        "bot": str(bot.user) if 'bot' in globals() and bot.user else "starting",
+        "bot": str(bot.user) if bot.user else "starting",
         "time": datetime.now().strftime("%d/%m/%Y %H:%M")
     }
 
@@ -35,11 +36,10 @@ def run():
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
-    t = Thread(target=run)
-    t.start()
+    Thread(target=run).start()
 
 # ========================
-# Webhook log
+# Webhook
 # ========================
 def send_log(msg):
     if WEBHOOK:
@@ -52,7 +52,6 @@ def send_log(msg):
 # Bot Setup
 # ========================
 POINTS_FILE = "points.json"
-LOG_CHANNEL_ID = 1484754409740173343
 APPROVED = "<:approved:1370751335695126678>"
 THUMBNAIL_URL = "https://cdn.discordapp.com/attachments/1369835971092156508/1484790068953481216/153_20260321124312.png"
 
@@ -60,7 +59,7 @@ intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ========================
-# Load/Save Points
+# Data
 # ========================
 def load_points():
     if not os.path.exists(POINTS_FILE):
@@ -75,112 +74,137 @@ def save_points(data):
 points = load_points()
 
 # ========================
-# Permission
+# Utils
 # ========================
-def is_admin(member: discord.Member):
-    if member.guild_permissions.administrator:
-        return True
-    allowed_roles = ["Admin", "Mod"]
-    return any(role.name in allowed_roles for role in member.roles)
+def is_admin(member):
+    return member.guild_permissions.administrator
 
-# ========================
-# Time Helper
-# ========================
-def now_time():
+def now():
     return datetime.now().strftime("%d/%m/%Y %H:%M")
 
-# ========================
-# Embed Helper
-# ========================
-def make_embed(action:str, member: discord.Member, amount: int, approve=True):
-    color = 0x2ecc71 if approve else 0xe74c3c
+def embed_msg(desc, color=0x2f3136):
     embed = discord.Embed(
         title="❮ Work Points | แต้มการทำงาน ❯",
-        description=f"{APPROVED} | {action} {amount} Work Points {'ให้กับ' if approve else 'ออกจาก'} {member.mention} สำเร็จ !\nขณะนี้มีจำนวนแต้มทั้งหมด {points[str(member.id)]} Work Points",
+        description=desc,
         color=color
     )
     embed.set_thumbnail(url=THUMBNAIL_URL)
-    embed.set_footer(text=f"ข้อมูล ณ วันที่ {now_time()}")
+    embed.set_footer(text=f"ข้อมูล ณ วันที่ {now()}")
     return embed
 
 # ========================
-# /points & !points
+# POINTS
 # ========================
-@bot.tree.command(name="points", description="ดูแต้มของสมาชิก")
-@app_commands.describe(member="สมาชิก (ปล่อยว่างเพื่อดูของตัวเอง)")
-async def points_cmd(interaction: discord.Interaction, member: discord.Member=None):
+@bot.tree.command(name="points")
+async def points_slash(interaction: discord.Interaction, member: discord.Member=None):
     target = member or interaction.user
-    user_id = str(target.id)
-    if user_id not in points:
-        points[user_id] = 0
-    embed = discord.Embed(
-        title="❮ Work Points | แต้มการทำงาน ❯",
-        description=f"{APPROVED} | คุณ {target.mention} !\nขณะนี้มีจำนวนแต้มทั้งหมด {points[user_id]} Work Points",
-        color=0x2f3136
+    uid = str(target.id)
+
+    if uid not in points:
+        points[uid] = 0
+
+    await interaction.response.send_message(
+        embed=embed_msg(
+            f"{APPROVED} | คุณ {target.mention} !\n"
+            f"ขณะนี้มี {points[uid]} Work Points"
+        )
     )
-    embed.set_footer(text=f"ข้อมูล ณ วันที่ {now_time()}")
-    await interaction.response.send_message(embed=embed)
 
-@bot.command(name="points")
-async def points_prefix(ctx, member: discord.Member=None):
-    await points_cmd.callback(await ctx.interaction if hasattr(ctx, "interaction") else ctx, member or ctx.author)
+@bot.command()
+async def points(ctx, member: discord.Member=None):
+    target = member or ctx.author
+    uid = str(target.id)
 
-# ========================
-# /add & !add
-# ========================
-async def add_points_logic(ctx_or_interaction, member: discord.Member, amount: int):
-    user_check = ctx_or_interaction.user if hasattr(ctx_or_interaction, "user") else ctx_or_interaction.author
-    if not is_admin(user_check):
-        await (ctx_or_interaction.response.send_message if hasattr(ctx_or_interaction, "response") else ctx_or_interaction.send)(
-            f"{APPROVED} | คุณไม่มีสิทธิ์ใช้คำสั่งนี้!", ephemeral=True
+    if uid not in points:
+        points[uid] = 0
+
+    await ctx.send(
+        embed=embed_msg(
+            f"{APPROVED} | คุณ {target.mention} !\n"
+            f"ขณะนี้มี {points[uid]} Work Points"
         )
-        return
-    user_id = str(member.id)
-    if user_id not in points:
-        points[user_id] = 0
-    points[user_id] += amount
+    )
+
+# ========================
+# ADD
+# ========================
+@bot.tree.command(name="add")
+async def add_slash(interaction: discord.Interaction, member: discord.Member, amount: int):
+
+    if not is_admin(interaction.user):
+        return await interaction.response.send_message("❌ ไม่มีสิทธิ์", ephemeral=True)
+
+    uid = str(member.id)
+    points[uid] = points.get(uid, 0) + amount
     save_points(points)
-    embed = make_embed("เพิ่ม", member, amount, approve=True)
-    await (ctx_or_interaction.response.send_message if hasattr(ctx_or_interaction, "response") else ctx_or_interaction.send)(embed=embed)
 
-@bot.tree.command(name="add", description="เพิ่มแต้มให้สมาชิก")
-@app_commands.describe(member="สมาชิก", amount="จำนวนแต้ม")
-async def add_cmd(interaction: discord.Interaction, member: discord.Member, amount: int):
-    await add_points_logic(interaction, member, amount)
-
-@bot.command(name="add")
-async def add_prefix(ctx, member: discord.Member, amount: int):
-    await add_points_logic(ctx, member, amount)
-
-# ========================
-# /remove & !remove
-# ========================
-async def remove_points_logic(ctx_or_interaction, member: discord.Member, amount: int):
-    user_check = ctx_or_interaction.user if hasattr(ctx_or_interaction, "user") else ctx_or_interaction.author
-    if not is_admin(user_check):
-        await (ctx_or_interaction.response.send_message if hasattr(ctx_or_interaction, "response") else ctx_or_interaction.send)(
-            f"{APPROVED} | คุณไม่มีสิทธิ์ใช้คำสั่งนี้!", ephemeral=True
+    await interaction.response.send_message(
+        embed=embed_msg(
+            f"{APPROVED} | เพิ่ม {amount} ให้ {member.mention}\n"
+            f"ตอนนี้มี {points[uid]} Work Points",
+            0x2ecc71
         )
-        return
-    user_id = str(member.id)
-    if user_id not in points:
-        points[user_id] = 0
-    points[user_id] -= amount
+    )
+
+@bot.command()
+async def add(ctx, member: discord.Member, amount: int):
+
+    if not is_admin(ctx.author):
+        return await ctx.send("❌ ไม่มีสิทธิ์")
+
+    uid = str(member.id)
+    points[uid] = points.get(uid, 0) + amount
     save_points(points)
-    embed = make_embed("ลบ", member, amount, approve=False)
-    await (ctx_or_interaction.response.send_message if hasattr(ctx_or_interaction, "response") else ctx_or_interaction.send)(embed=embed)
 
-@bot.tree.command(name="remove", description="ลดแต้มสมาชิก")
-@app_commands.describe(member="สมาชิก", amount="จำนวนแต้ม")
-async def remove_cmd(interaction: discord.Interaction, member: discord.Member, amount: int):
-    await remove_points_logic(interaction, member, amount)
-
-@bot.command(name="remove")
-async def remove_prefix(ctx, member: discord.Member, amount: int):
-    await remove_points_logic(ctx, member, amount)
+    await ctx.send(
+        embed=embed_msg(
+            f"{APPROVED} | เพิ่ม {amount} ให้ {member.mention}\n"
+            f"ตอนนี้มี {points[uid]} Work Points",
+            0x2ecc71
+        )
+    )
 
 # ========================
-# Bot Events
+# REMOVE
+# ========================
+@bot.tree.command(name="remove")
+async def remove_slash(interaction: discord.Interaction, member: discord.Member, amount: int):
+
+    if not is_admin(interaction.user):
+        return await interaction.response.send_message("❌ ไม่มีสิทธิ์", ephemeral=True)
+
+    uid = str(member.id)
+    points[uid] = points.get(uid, 0) - amount
+    save_points(points)
+
+    await interaction.response.send_message(
+        embed=embed_msg(
+            f"{APPROVED} | ลบ {amount} จาก {member.mention}\n"
+            f"ตอนนี้มี {points[uid]} Work Points",
+            0xe74c3c
+        )
+    )
+
+@bot.command()
+async def remove(ctx, member: discord.Member, amount: int):
+
+    if not is_admin(ctx.author):
+        return await ctx.send("❌ ไม่มีสิทธิ์")
+
+    uid = str(member.id)
+    points[uid] = points.get(uid, 0) - amount
+    save_points(points)
+
+    await ctx.send(
+        embed=embed_msg(
+            f"{APPROVED} | ลบ {amount} จาก {member.mention}\n"
+            f"ตอนนี้มี {points[uid]} Work Points",
+            0xe74c3c
+        )
+    )
+
+# ========================
+# Events
 # ========================
 @bot.event
 async def on_ready():
@@ -188,18 +212,12 @@ async def on_ready():
     send_log(f"🟢 Bot ONLINE: {bot.user}")
     await bot.tree.sync()
 
-@bot.event
-async def on_disconnect():
-    print("❌ Bot disconnected")
-    send_log("🔴 Bot DISCONNECTED")
-
-@bot.event
-async def on_resumed():
-    print("✅ Bot reconnected")
-    send_log("🟢 Bot RECONNECTED")
-
 # ========================
-# Run Bot
+# Run
 # ========================
 keep_alive()
-bot.run(TOKEN)
+
+if not TOKEN:
+    print("❌ TOKEN ไม่ถูกตั้งค่า")
+else:
+    bot.run(TOKEN)
