@@ -1,3 +1,4 @@
+# main.py
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -7,6 +8,14 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 import requests
+from dotenv import load_dotenv
+
+# ========================
+# Load .env
+# ========================
+load_dotenv()
+TOKEN = os.getenv("DISCORD_TOKEN")
+WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
 
 # ========================
 # Keep Alive (Flask)
@@ -17,23 +26,21 @@ app = Flask('')
 def health():
     return {
         "status": "online",
-        "bot": str(bot.user) if bot.user else "starting",
+        "bot": str(bot.user) if 'bot' in globals() and bot.user else "starting",
         "time": datetime.now().strftime("%d/%m/%Y %H:%M")
     }
 
 def run():
-    app.run(host='0.0.0.0', port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = Thread(target=run)
     t.start()
 
 # ========================
-# Discord Token & Webhook
+# Webhook log
 # ========================
-TOKEN = os.getenv("DISCORD_TOKEN")
-WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
-
 def send_log(msg):
     if WEBHOOK:
         try:
