@@ -1,5 +1,4 @@
 discord.py
-pytz
 python-dotenv
-flask
 requests
+pytz
