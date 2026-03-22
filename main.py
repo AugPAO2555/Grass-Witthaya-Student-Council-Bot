@@ -4,8 +4,6 @@ from discord import app_commands
 import json
 import os
 from datetime import datetime
-from flask import Flask
-from threading import Thread
 import requests
 from dotenv import load_dotenv
 
@@ -19,27 +17,7 @@ WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
 print("TOKEN:", "SET" if TOKEN else "❌ NOT SET")
 
 # ========================
-# Flask (Keep Alive)
-# ========================
-app = Flask('')
-
-@app.route('/')
-def health():
-    return {
-        "status": "online",
-        "bot": str(bot.user) if bot.user else "starting",
-        "time": datetime.now().strftime("%d/%m/%Y %H:%M")
-    }
-
-def run():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    Thread(target=run).start()
-
-# ========================
-# Webhook
+# Webhook Log
 # ========================
 def send_log(msg):
     if WEBHOOK:
@@ -215,8 +193,6 @@ async def on_ready():
 # ========================
 # Run
 # ========================
-keep_alive()
-
 if not TOKEN:
     print("❌ TOKEN ไม่ถูกตั้งค่า")
 else:
