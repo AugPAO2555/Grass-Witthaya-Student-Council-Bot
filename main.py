@@ -22,9 +22,9 @@ print("TOKEN:", "SET" if TOKEN else "❌ NOT SET")
 def send_log(msg):
     if WEBHOOK:
         try:
-            requests.post(WEBHOOK, json={"content": msg})
-        except:
-            pass
+            requests.post(WEBHOOK, json={"content": msg}, timeout=5)
+        except Exception as e:
+            print("Webhook Error:", e)
 
 # ========================
 # Bot Setup
@@ -33,7 +33,10 @@ POINTS_FILE = "points.json"
 APPROVED = "<:approved:1370751335695126678>"
 THUMBNAIL_URL = "https://cdn.discordapp.com/attachments/1369835971092156508/1484790068953481216/153_20260321124312.png"
 
-intents = discord.Intents.all()
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ========================
@@ -42,12 +45,15 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 def load_points():
     if not os.path.exists(POINTS_FILE):
         return {}
-    with open(POINTS_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(POINTS_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
 
 def save_points(data):
     with open(POINTS_FILE, "w") as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=4)
 
 points = load_points()
 
@@ -71,6 +77,28 @@ def embed_msg(desc, color=0x2f3136):
     return embed
 
 # ========================
+# EVENTS
+# ========================
+@bot.event
+async def on_ready():
+    print(f"✅ Bot online: {bot.user}")
+    send_log(f"🟢 Bot ONLINE: {bot.user}")
+
+    try:
+        synced = await bot.tree.sync()
+        print(f"🔁 Synced {len(synced)} commands")
+    except Exception as e:
+        print("Sync Error:", e)
+
+# ========================
+# ERROR HANDLER (สำคัญมาก)
+# ========================
+@bot.event
+async def on_command_error(ctx, error):
+    print("ERROR:", error)
+    await ctx.send("❌ เกิดข้อผิดพลาด (ดู console)")
+
+# ========================
 # POINTS
 # ========================
 @bot.tree.command(name="points")
@@ -78,28 +106,26 @@ async def points_slash(interaction: discord.Interaction, member: discord.Member=
     target = member or interaction.user
     uid = str(target.id)
 
-    if uid not in points:
-        points[uid] = 0
+    points[uid] = points.get(uid, 0)
 
     await interaction.response.send_message(
         embed=embed_msg(
-            f"{APPROVED} | คุณ {target.mention} !\n"
-            f"ขณะนี้มี {points[uid]} Work Points"
+            f"{APPROVED} | คุณ {target.mention}\n"
+            f"มี {points[uid]} Work Points"
         )
     )
 
 @bot.command()
-async def points(ctx, member: discord.Member=None):
+async def points_cmd(ctx, member: discord.Member=None):
     target = member or ctx.author
     uid = str(target.id)
 
-    if uid not in points:
-        points[uid] = 0
+    points[uid] = points.get(uid, 0)
 
     await ctx.send(
         embed=embed_msg(
-            f"{APPROVED} | คุณ {target.mention} !\n"
-            f"ขณะนี้มี {points[uid]} Work Points"
+            f"{APPROVED} | คุณ {target.mention}\n"
+            f"มี {points[uid]} Work Points"
         )
     )
 
@@ -112,9 +138,14 @@ async def add_slash(interaction: discord.Interaction, member: discord.Member, am
     if not is_admin(interaction.user):
         return await interaction.response.send_message("❌ ไม่มีสิทธิ์", ephemeral=True)
 
+    if amount <= 0:
+        return await interaction.response.send_message("❌ จำนวนต้องมากกว่า 0", ephemeral=True)
+
     uid = str(member.id)
     points[uid] = points.get(uid, 0) + amount
     save_points(points)
+
+    send_log(f"➕ {member} +{amount} โดย {interaction.user}")
 
     await interaction.response.send_message(
         embed=embed_msg(
@@ -125,14 +156,19 @@ async def add_slash(interaction: discord.Interaction, member: discord.Member, am
     )
 
 @bot.command()
-async def add(ctx, member: discord.Member, amount: int):
+async def add_cmd(ctx, member: discord.Member, amount: int):
 
     if not is_admin(ctx.author):
         return await ctx.send("❌ ไม่มีสิทธิ์")
 
+    if amount <= 0:
+        return await ctx.send("❌ จำนวนต้องมากกว่า 0")
+
     uid = str(member.id)
     points[uid] = points.get(uid, 0) + amount
     save_points(points)
+
+    send_log(f"➕ {member} +{amount} โดย {ctx.author}")
 
     await ctx.send(
         embed=embed_msg(
@@ -151,9 +187,14 @@ async def remove_slash(interaction: discord.Interaction, member: discord.Member,
     if not is_admin(interaction.user):
         return await interaction.response.send_message("❌ ไม่มีสิทธิ์", ephemeral=True)
 
+    if amount <= 0:
+        return await interaction.response.send_message("❌ จำนวนต้องมากกว่า 0", ephemeral=True)
+
     uid = str(member.id)
-    points[uid] = points.get(uid, 0) - amount
+    points[uid] = max(0, points.get(uid, 0) - amount)
     save_points(points)
+
+    send_log(f"➖ {member} -{amount} โดย {interaction.user}")
 
     await interaction.response.send_message(
         embed=embed_msg(
@@ -164,14 +205,19 @@ async def remove_slash(interaction: discord.Interaction, member: discord.Member,
     )
 
 @bot.command()
-async def remove(ctx, member: discord.Member, amount: int):
+async def remove_cmd(ctx, member: discord.Member, amount: int):
 
     if not is_admin(ctx.author):
         return await ctx.send("❌ ไม่มีสิทธิ์")
 
+    if amount <= 0:
+        return await ctx.send("❌ จำนวนต้องมากกว่า 0")
+
     uid = str(member.id)
-    points[uid] = points.get(uid, 0) - amount
+    points[uid] = max(0, points.get(uid, 0) - amount)
     save_points(points)
+
+    send_log(f"➖ {member} -{amount} โดย {ctx.author}")
 
     await ctx.send(
         embed=embed_msg(
@@ -182,16 +228,7 @@ async def remove(ctx, member: discord.Member, amount: int):
     )
 
 # ========================
-# Events
-# ========================
-@bot.event
-async def on_ready():
-    print(f"✅ Bot online: {bot.user}")
-    send_log(f"🟢 Bot ONLINE: {bot.user}")
-    await bot.tree.sync()
-
-# ========================
-# Run
+# RUN
 # ========================
 if not TOKEN:
     print("❌ TOKEN ไม่ถูกตั้งค่า")
